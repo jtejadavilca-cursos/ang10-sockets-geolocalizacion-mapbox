@@ -123,6 +123,10 @@
           }
         }
       }
-    }},
-  "defaultProject": "mapbox-sockets"
+    }
+  },
+  "defaultProject": "mapbox-sockets",
+  "cli": {
+    "analytics": "bb00d681-162b-4e1a-bfe1-8a163f89dee1"
+  }
 }
