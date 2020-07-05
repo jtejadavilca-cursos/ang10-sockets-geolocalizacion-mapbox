@@ -1,9 +1,10 @@
 import { Component, OnInit } from '@angular/core';
-import { Lugar } from '../../interfaces/interfaces';
+import { Lugar, Marcador } from '../../interfaces/interfaces';
 
 import * as mapboxgl from 'mapbox-gl';
 import { Subscription } from 'rxjs';
 import { WebsocketService } from '../../services/websocket.service';
+import { MapboxApiService } from '../../services/mapbox-api.service';
 
 @Component({
   selector: 'app-mapa',
@@ -18,34 +19,17 @@ export class MapaComponent implements OnInit {
 
   map: mapboxgl.Map;
 
-  lugares: Lugar[] = [{
-    id: '1',
-    nombre: 'Fernando',
-    lng: -75.75512993582937,
-    lat: 45.349977429009954,
-    color: '#dd8fee'
-  },
-  {
-    id: '2',
-    nombre: 'Amy',
-    lng: -75.75195645527508,
-    lat: 45.351584045823756,
-    color: '#790af0'
-  },
-  {
-    id: '3',
-    nombre: 'Orlando',
-    lng: -75.75900589557777,
-    lat: 45.34794635758547,
-    color: '#19884b'
-  }];
+  lugares: Marcador = {};
+  markersMapbox: { [id: string]: mapboxgl.Marker } = {};
 
   constructor(
-    private wsService: WebsocketService
+    private wsService: WebsocketService,
+    private mboxService: MapboxApiService
   ) { }
 
   ngOnInit(): void {
-    this.crearMapa();
+    this.obtenerMarcadores();
+    this.escucharSockets();
   }
 
   escucharSockets(): void {
@@ -54,10 +38,16 @@ export class MapaComponent implements OnInit {
                                                   .subscribe( ( marcador: Lugar ) => this.agregarMarcador(marcador));
     // marcador mover
     this.subsSocketMoverMarcador = this.wsService.listen('mover-marcador')
-                                                  .subscribe( ( marcador: Lugar ) => console.log(marcador) );
+                                                  .subscribe( ( marcador: Lugar ) =>{
+                                                    this.markersMapbox[ marcador.id ].setLngLat([marcador.lng, marcador.lat]);
+                                                  });
     // marcador borrar
     this.subsSocketBorrarMarcador = this.wsService.listen('eliminar-marcador')
-                                                  .subscribe( ( marcador: Lugar ) => console.log(marcador) );
+                                                  .subscribe( ( id: string ) => {
+                                                    this.markersMapbox[ id ].remove();
+                                                    delete this.markersMapbox[ id ];
+                                                    delete this.lugares[ id ];
+                                                  });
   }
 
 
@@ -71,13 +61,13 @@ export class MapaComponent implements OnInit {
       zoom: 15.8
     });
 
-    this.lugares.forEach( lugar => {
-      this.agregarMarcador(lugar);
-    });
+    for ( const [key, marcador] of Object.entries(this.lugares)) {
+      this.agregarMarcador(marcador);
+    }
   }
 
   agregarMarcador( marcador: Lugar ): void {
-
+    console.log('Agregar marcador...');
     // POPUP MARCADOR
     const h2 = document.createElement('h2');
     h2.innerText = marcador.nombre;
@@ -104,13 +94,27 @@ export class MapaComponent implements OnInit {
 
     marker.on('drag', () => {
       const lngLat = marker.getLngLat();
-      console.log(lngLat);
+      this.moverMarcador(marcador.id, lngLat);
     });
 
 
     btnBorrar.addEventListener('click', () => {
       marker.remove();
+      this.borrarMarcador( marcador.id );
     });
+
+
+    this.markersMapbox[ marcador.id ] = marker;
+  }
+
+  // Service
+  obtenerMarcadores(): void {
+    this.mboxService.obtenerLugares()
+          .subscribe( resp => {
+              console.log('resp ', resp);
+              this.lugares = resp;
+              this.crearMapa();
+          });
   }
 
   crearMarcador(): void {
@@ -123,5 +127,19 @@ export class MapaComponent implements OnInit {
     };
 
     this.agregarMarcador(customMarker);
+    this.wsService.emit( 'nuevo-marcador',  customMarker);
+  }
+
+  borrarMarcador( id: string ): void {
+
+    this.wsService.emit( 'eliminar-marcador',  id);
+  }
+
+  moverMarcador(id: string, lngLat: mapboxgl.LngLat): void {
+    this.wsService.emit( 'mover-marcador',  {
+      id,
+      lng: lngLat.lng,
+      lat: lngLat.lat
+    });
   }
 }
